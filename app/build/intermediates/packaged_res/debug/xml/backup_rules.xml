@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <!-- 
+    Specify the rules for what data should be backed up.
+    You can exclude or include specific files or directories.
+    -->
+</full-backup-content>
