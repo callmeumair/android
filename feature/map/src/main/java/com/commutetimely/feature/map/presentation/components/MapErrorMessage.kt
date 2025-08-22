@@ -11,6 +11,7 @@ import androidx.compose.ui.unit.dp
 fun MapErrorMessage(
     error: String,
     onRetry: () -> Unit,
+    onDismiss: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Card(
@@ -39,13 +40,26 @@ fun MapErrorMessage(
             
             Spacer(modifier = Modifier.height(12.dp))
             
-            Button(
-                onClick = onRetry,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.error
-                )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text("Retry")
+                Button(
+                    onClick = onRetry,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Text("Retry")
+                }
+                
+                OutlinedButton(
+                    onClick = onDismiss,
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                ) {
+                    Text("Dismiss")
+                }
             }
         }
     }

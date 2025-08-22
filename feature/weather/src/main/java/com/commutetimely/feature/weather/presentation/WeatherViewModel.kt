@@ -2,8 +2,11 @@ package com.commutetimely.feature.weather.presentation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.commutetimely.core.data.location.LocationService
 import com.commutetimely.core.domain.model.WeatherInfo
 import com.commutetimely.core.domain.model.WeatherForecast
+import com.commutetimely.core.domain.repository.WeatherRepository
+import com.commutetimely.core.domain.util.Resource
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -12,27 +15,102 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltViewModel
-class WeatherViewModel @Inject constructor() : ViewModel() {
+class WeatherViewModel @Inject constructor(
+    private val weatherRepository: WeatherRepository,
+    private val locationService: LocationService
+) : ViewModel() {
     
     private val _uiState = MutableStateFlow(WeatherUiState())
     val uiState: StateFlow<WeatherUiState> = _uiState.asStateFlow()
     
     fun loadCurrentWeather() {
         viewModelScope.launch {
-            // TODO: Load actual weather data
-            _uiState.value = _uiState.value.copy(
-                currentWeather = createSampleWeatherInfo()
-            )
+            _uiState.value = _uiState.value.copy(isLoading = true, error = null)
+            
+            try {
+                if (!locationService.hasLocationPermission()) {
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        error = "Location permission required for weather data"
+                    )
+                    return@launch
+                }
+                
+                val location = locationService.getCurrentLocation()
+                val weatherResult = weatherRepository.getCurrentWeather(
+                    latitude = location.latitude,
+                    longitude = location.longitude
+                )
+                
+                when (weatherResult) {
+                    is Resource.Success -> {
+                        _uiState.value = _uiState.value.copy(
+                            isLoading = false,
+                            currentWeather = weatherResult.data
+                        )
+                    }
+                    is Resource.Error -> {
+                        _uiState.value = _uiState.value.copy(
+                            isLoading = false,
+                            error = "Failed to load weather: ${weatherResult.message}"
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = "Failed to get location: ${e.message}"
+                )
+            }
         }
     }
     
     fun loadWeatherForecast() {
         viewModelScope.launch {
-            // TODO: Load actual forecast data
-            _uiState.value = _uiState.value.copy(
-                hourlyForecast = createSampleHourlyForecast(),
-                dailyForecast = createSampleDailyForecast()
-            )
+            try {
+                if (!locationService.hasLocationPermission()) {
+                    return@launch
+                }
+                
+                val location = locationService.getCurrentLocation()
+                val hourlyResult = weatherRepository.getHourlyForecast(
+                    latitude = location.latitude,
+                    longitude = location.longitude,
+                    hours = 24
+                )
+                
+                when (hourlyResult) {
+                    is Resource.Success -> {
+                        // Convert weather info to forecast format for UI
+                        val hourlyForecast = hourlyResult.data.mapIndexed { index, weather ->
+                            WeatherForecast(
+                                date = "${index + 1}:00",
+                                highTemp = weather.temperature,
+                                lowTemp = weather.temperature - 2,
+                                weatherCondition = weather.weatherCondition,
+                                iconCode = weather.iconCode,
+                                precipitation = weather.precipitation,
+                                windSpeed = weather.windSpeed
+                            )
+                        }
+                        
+                        _uiState.value = _uiState.value.copy(
+                            hourlyForecast = hourlyForecast
+                        )
+                    }
+                    is Resource.Error -> {
+                        // Use fallback data or show error
+                        _uiState.value = _uiState.value.copy(
+                            hourlyForecast = createSampleHourlyForecast()
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    hourlyForecast = createSampleHourlyForecast(),
+                    dailyForecast = createSampleDailyForecast()
+                )
+            }
         }
     }
     

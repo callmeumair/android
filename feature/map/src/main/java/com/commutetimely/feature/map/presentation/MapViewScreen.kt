@@ -19,6 +19,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.commutetimely.core.domain.model.Location
 import com.commutetimely.core.domain.model.RouteType
 import com.commutetimely.core.ui.theme.*
+import com.commutetimely.core.ui.permissions.LocationPermissionHandler
 import com.commutetimely.feature.map.presentation.components.*
 import com.mapbox.maps.MapView
 import com.mapbox.maps.Style
@@ -97,11 +98,17 @@ fun MapViewScreen(
             )
         }
     ) { paddingValues ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
+        LocationPermissionHandler(
+            onPermissionGranted = {
+                // Automatically get current location when permission is granted
+                viewModel.getCurrentLocation()
+            }
         ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues)
+            ) {
             // Mapbox Map
             AndroidView(
                 factory = { context ->
@@ -122,10 +129,18 @@ fun MapViewScreen(
             MapSearchBar(
                 origin = uiState.origin,
                 destination = uiState.destination,
+                searchResults = uiState.searchResults,
                 onOriginChange = { viewModel.updateOrigin(it) },
-                onDestinationChange = { viewModel.updateDestination(it) },
+                onDestinationChange = { 
+                    viewModel.updateDestination(it)
+                    viewModel.searchDestinations(it)
+                },
                 onPlanRoute = { origin, destination ->
                     viewModel.planRoute(origin, destination)
+                },
+                onGetCurrentLocation = { viewModel.getCurrentLocation() },
+                onSelectDestination = { location ->
+                    viewModel.selectDestination(location)
                 },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -175,10 +190,12 @@ fun MapViewScreen(
                 MapErrorMessage(
                     error = error,
                     onRetry = { viewModel.retryLastOperation() },
+                    onDismiss = { viewModel.clearError() },
                     modifier = Modifier
                         .align(Alignment.Center)
                         .padding(16.dp)
                 )
+            }
             }
         }
     }
@@ -315,9 +332,12 @@ private fun MapBottomBar(
 private fun MapSearchBar(
     origin: String,
     destination: String,
+    searchResults: List<com.commutetimely.core.domain.model.Location>,
     onOriginChange: (String) -> Unit,
     onDestinationChange: (String) -> Unit,
     onPlanRoute: (String, String) -> Unit,
+    onGetCurrentLocation: () -> Unit,
+    onSelectDestination: (com.commutetimely.core.domain.model.Location) -> Unit,
     modifier: Modifier = Modifier
 ) {
     Card(
@@ -341,6 +361,15 @@ private fun MapSearchBar(
                         tint = MaterialTheme.colorScheme.primary
                     )
                 },
+                trailingIcon = {
+                    IconButton(onClick = onGetCurrentLocation) {
+                        Icon(
+                            imageVector = Icons.Default.GpsFixed,
+                            contentDescription = "Get Current Location",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                },
                 modifier = Modifier.fillMaxWidth(),
                 shape = inputShape,
                 singleLine = true
@@ -363,6 +392,62 @@ private fun MapSearchBar(
                 shape = inputShape,
                 singleLine = true
             )
+            
+            // Search Results Dropdown
+            if (searchResults.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(8.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
+                ) {
+                    Column {
+                        searchResults.take(5).forEach { location ->
+                            OutlinedButton(
+                                onClick = { onSelectDestination(location) },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 8.dp, vertical = 2.dp),
+                                shape = RoundedCornerShape(4.dp),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    containerColor = Color.Transparent
+                                )
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.LocationOn,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = location.name,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            textAlign = TextAlign.Start
+                                        )
+                                        location.address?.let { address ->
+                                            Text(
+                                                text = address,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                textAlign = TextAlign.Start
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             
             Spacer(modifier = Modifier.height(12.dp))
             

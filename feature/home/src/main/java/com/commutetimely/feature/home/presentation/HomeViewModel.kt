@@ -2,8 +2,12 @@ package com.commutetimely.feature.home.presentation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.commutetimely.core.data.location.LocationService
 import com.commutetimely.core.domain.model.Commute
 import com.commutetimely.core.domain.model.WeatherInfo
+import com.commutetimely.core.domain.repository.CommuteRepository
+import com.commutetimely.core.domain.repository.WeatherRepository
+import com.commutetimely.core.domain.util.Resource
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -12,7 +16,11 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltViewModel
-class HomeViewModel @Inject constructor() : ViewModel() {
+class HomeViewModel @Inject constructor(
+    private val weatherRepository: WeatherRepository,
+    private val commuteRepository: CommuteRepository,
+    private val locationService: LocationService
+) : ViewModel() {
     
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
@@ -23,16 +31,61 @@ class HomeViewModel @Inject constructor() : ViewModel() {
     
     private fun loadInitialData() {
         viewModelScope.launch {
-            // TODO: Load actual data from repositories
-            _uiState.value = _uiState.value.copy(
-                isLoading = false,
-                weatherInfo = createSampleWeatherInfo(),
-                recentCommutes = createSampleCommutes(),
-                activeCommutes = emptyList(),
-                commuteInsights = "Your commute time is typically 25 minutes",
-                trafficSummary = "Light traffic on your usual route"
-            )
+            _uiState.value = _uiState.value.copy(isLoading = true)
+            
+            try {
+                // Load weather data if location permission is available
+                if (locationService.hasLocationPermission()) {
+                    val location = locationService.getCurrentLocation()
+                    val weatherResult = weatherRepository.getCurrentWeather(
+                        latitude = location.latitude,
+                        longitude = location.longitude
+                    )
+                    
+                    val weatherInfo = when (weatherResult) {
+                        is Resource.Success -> weatherResult.data
+                        is Resource.Error -> createSampleWeatherInfo() // Fallback
+                    }
+                    
+                    _uiState.value = _uiState.value.copy(weatherInfo = weatherInfo)
+                }
+                
+                // Load commute data
+                val commutesResult = commuteRepository.getCommutes()
+                val recentCommutes = when (commutesResult) {
+                    is Resource.Success -> commutesResult.data
+                    is Resource.Error -> createSampleCommutes() // Fallback
+                }
+                
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    recentCommutes = recentCommutes,
+                    activeCommutes = recentCommutes.filter { it.isActive },
+                    commuteInsights = generateCommuteInsights(recentCommutes),
+                    trafficSummary = "Light traffic on your usual route"
+                )
+                
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    weatherInfo = createSampleWeatherInfo(),
+                    recentCommutes = createSampleCommutes(),
+                    activeCommutes = emptyList(),
+                    commuteInsights = "Your commute time is typically 25 minutes",
+                    trafficSummary = "Light traffic on your usual route",
+                    error = "Failed to load data: ${e.message}"
+                )
+            }
         }
+    }
+    
+    private fun generateCommuteInsights(commutes: List<Commute>): String {
+        if (commutes.isEmpty()) {
+            return "Start tracking your commutes to see insights"
+        }
+        
+        val avgDuration = commutes.map { it.estimatedDuration }.average()
+        return "Your average commute time is ${avgDuration.toInt()} minutes"
     }
     
     private fun createSampleWeatherInfo(): WeatherInfo {
